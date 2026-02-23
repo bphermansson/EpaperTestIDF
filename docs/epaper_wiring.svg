@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760">
+  <defs>
+    <style>
+      .bg { fill: #f4f6f8; }
+      .board { fill: #ffffff; stroke: #1f2937; stroke-width: 3; rx: 18; }
+      .title { font: 700 30px 'DejaVu Sans', sans-serif; fill: #111827; }
+      .subtitle { font: 500 18px 'DejaVu Sans', sans-serif; fill: #374151; }
+      .pin { font: 600 16px 'DejaVu Sans', sans-serif; fill: #111827; }
+      .label { font: 700 15px 'DejaVu Sans', sans-serif; fill: #0f172a; }
+      .wire { fill: none; stroke-width: 4; stroke-linecap: round; }
+      .gnd { stroke: #111827; }
+      .vcc { stroke: #dc2626; }
+      .spi { stroke: #2563eb; }
+      .ctrl { stroke: #059669; }
+      .note { font: 500 14px 'DejaVu Sans', sans-serif; fill: #4b5563; }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1200" height="760"/>
+  <text class="title" x="40" y="52">ESP32-S3 + WeAct 2.13&quot; E-Paper (BW) Kopplingsbild</text>
+  <text class="subtitle" x="40" y="82">Pinout enligt ditt fungerande projekt</text>
+
+  <!-- ESP32 board -->
+  <rect class="board" x="60" y="130" width="430" height="540"/>
+  <text class="title" x="95" y="178" style="font-size:26px;">ESP32-S3</text>
+
+  <text class="pin" x="95" y="240">GPIO6  (MOSI)</text>
+  <text class="pin" x="95" y="285">GPIO4  (SCK)</text>
+  <text class="pin" x="95" y="330">GPIO5  (CS)</text>
+  <text class="pin" x="95" y="375">GPIO1  (DC)</text>
+  <text class="pin" x="95" y="420">GPIO2  (RST)</text>
+  <text class="pin" x="95" y="465">GPIO3  (BUSY)</text>
+  <text class="pin" x="95" y="510">3V3</text>
+  <text class="pin" x="95" y="555">GND</text>
+
+  <!-- EPD board -->
+  <rect class="board" x="710" y="130" width="430" height="540"/>
+  <text class="title" x="745" y="178" style="font-size:26px;">WeAct 2.13&quot; E-Paper</text>
+
+  <text class="pin" x="745" y="240">DIN / SDA</text>
+  <text class="pin" x="745" y="285">CLK</text>
+  <text class="pin" x="745" y="330">CS</text>
+  <text class="pin" x="745" y="375">DC</text>
+  <text class="pin" x="745" y="420">RST</text>
+  <text class="pin" x="745" y="465">BUSY</text>
+  <text class="pin" x="745" y="510">VCC (3V3)</text>
+  <text class="pin" x="745" y="555">GND</text>
+
+  <!-- Connection points left -->
+  <circle cx="430" cy="233" r="5" fill="#2563eb"/>
+  <circle cx="430" cy="278" r="5" fill="#2563eb"/>
+  <circle cx="430" cy="323" r="5" fill="#059669"/>
+  <circle cx="430" cy="368" r="5" fill="#059669"/>
+  <circle cx="430" cy="413" r="5" fill="#059669"/>
+  <circle cx="430" cy="458" r="5" fill="#059669"/>
+  <circle cx="430" cy="503" r="5" fill="#dc2626"/>
+  <circle cx="430" cy="548" r="5" fill="#111827"/>
+
+  <!-- Connection points right -->
+  <circle cx="715" cy="233" r="5" fill="#2563eb"/>
+  <circle cx="715" cy="278" r="5" fill="#2563eb"/>
+  <circle cx="715" cy="323" r="5" fill="#059669"/>
+  <circle cx="715" cy="368" r="5" fill="#059669"/>
+  <circle cx="715" cy="413" r="5" fill="#059669"/>
+  <circle cx="715" cy="458" r="5" fill="#059669"/>
+  <circle cx="715" cy="503" r="5" fill="#dc2626"/>
+  <circle cx="715" cy="548" r="5" fill="#111827"/>
+
+  <!-- Wires -->
+  <path class="wire spi" d="M430 233 C560 233, 585 233, 715 233"/>
+  <path class="wire spi" d="M430 278 C560 278, 585 278, 715 278"/>
+  <path class="wire ctrl" d="M430 323 C560 323, 585 323, 715 323"/>
+  <path class="wire ctrl" d="M430 368 C560 368, 585 368, 715 368"/>
+  <path class="wire ctrl" d="M430 413 C560 413, 585 413, 715 413"/>
+  <path class="wire ctrl" d="M430 458 C560 458, 585 458, 715 458"/>
+  <path class="wire vcc" d="M430 503 C560 503, 585 503, 715 503"/>
+  <path class="wire gnd" d="M430 548 C560 548, 585 548, 715 548"/>
+
+  <!-- Mapping labels -->
+  <text class="label" x="515" y="224">GPIO6 → DIN</text>
+  <text class="label" x="515" y="269">GPIO4 → CLK</text>
+  <text class="label" x="515" y="314">GPIO5 → CS</text>
+  <text class="label" x="515" y="359">GPIO1 → DC</text>
+  <text class="label" x="515" y="404">GPIO2 → RST</text>
+  <text class="label" x="515" y="449">GPIO3 → BUSY</text>
+  <text class="label" x="515" y="494">3V3 → VCC</text>
+  <text class="label" x="515" y="539">GND → GND</text>
+
+  <text class="note" x="60" y="710">Not: MISO används inte (EPD_MISO = -1). Kör endast 3.3V logik.</text>
+</svg>
