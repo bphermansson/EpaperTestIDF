@@ -6,7 +6,7 @@
 #include "esp_err.h"
 #include "esp_log.h"
 
-// --- Anpassa dessa pinnar efter din koppling ---
+// --- Adjust these pins to match your wiring ---
 #define PIN_NUM_MOSI    6
 #define PIN_NUM_CLK     4
 #define PIN_NUM_CS      5
@@ -14,14 +14,14 @@
 #define PIN_NUM_RST     2
 #define PIN_NUM_BUSY    3
 
-// WeAct 2.13" svart/vit panel
-// Kontroller-RAM är normalt 122x250, även om vi vill rita 250x122 på skärmen.
+// WeAct 2.13" black/white panel
+// Controller RAM is typically 122x250, even when drawing 250x122 on screen.
 #define EPD_RAW_WIDTH        122
 #define EPD_RAW_HEIGHT       250
 #define EPD_RAW_WIDTH_BYTES  ((EPD_RAW_WIDTH + 7) / 8)
 #define EPD_BUF_SIZE         (EPD_RAW_WIDTH_BYTES * EPD_RAW_HEIGHT)
 
-// Logisk (användar-)yta i landskap
+// Logical (user) drawing area in landscape
 #define SCREEN_WIDTH         250
 #define SCREEN_HEIGHT        122
 #define TEXT_SCALE           3
@@ -33,7 +33,7 @@ static const char *TAG = "EPD_TEST";
 static spi_device_handle_t epd_spi;
 static uint8_t epd_fb[EPD_BUF_SIZE];
 
-// Enkel 5x7-font för ASCII 0x20..0x7F
+// Simple 5x7 font for ASCII 0x20..0x7F
 static const uint8_t font5x7[][5] = {
     {0x00,0x00,0x00,0x00,0x00},{0x00,0x00,0x5F,0x00,0x00},{0x00,0x07,0x00,0x07,0x00},{0x14,0x7F,0x14,0x7F,0x14},
     {0x24,0x2A,0x7F,0x2A,0x12},{0x23,0x13,0x08,0x64,0x62},{0x36,0x49,0x56,0x20,0x50},{0x00,0x08,0x07,0x03,0x00},
@@ -90,7 +90,7 @@ static void epd_wait_busy(void)
         timeout_ms -= 20;
     }
     if (timeout_ms <= 0) {
-        ESP_LOGW(TAG, "BUSY-timeout, fortsatter anda");
+        ESP_LOGW(TAG, "BUSY timeout, continuing anyway");
     }
 }
 
@@ -198,7 +198,7 @@ static void epd_draw_pixel(int x, int y, uint8_t black)
     if (x < 0 || x >= SCREEN_WIDTH || y < 0 || y >= SCREEN_HEIGHT) {
         return;
     }
-    // Rotera till panel-RAM och flippa så texten blir rättvänd i landskap.
+    // Map to panel RAM and flip so text is upright in landscape.
     int xr = (SCREEN_HEIGHT - 1) - y;
     int yr = x;
 
@@ -272,15 +272,15 @@ static esp_err_t epd_update_full(void)
 
 void app_main(void)
 {
-    ESP_LOGI(TAG, "Initierar e-paper");
+    ESP_LOGI(TAG, "Initializing e-paper");
     ESP_ERROR_CHECK(epd_init());
 
     epd_clear_buffer(1);
     epd_draw_text_scaled(8, 10, "ESP32-S3", TEXT_SCALE);
     epd_draw_text_scaled(8, 46, "WeAct 2.13", TEXT_SCALE);
-    epd_draw_text_scaled(8, 82, "Hej varlden!", TEXT_SCALE);
+    epd_draw_text_scaled(8, 82, "Hello world!", TEXT_SCALE);
 
-    ESP_LOGI(TAG, "Uppdaterar display");
+    ESP_LOGI(TAG, "Updating display");
     ESP_ERROR_CHECK(epd_update_full());
-    ESP_LOGI(TAG, "Klar");
+    ESP_LOGI(TAG, "Done");
 }
