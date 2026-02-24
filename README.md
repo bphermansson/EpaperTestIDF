@@ -3,6 +3,7 @@
 Test project for **WeAct 2.13" black/white e-paper** with **ESP32-S3** using ESP-IDF.
 
 The project includes:
+- A reusable e-paper driver module (`epaper_driver.c/.h`)
 - SPI initialization for the display
 - Simple framebuffer
 - Simple text rendering (5x7 font) with scaling
@@ -53,15 +54,45 @@ Change in `main/main.c`:
 
 Change the strings in `app_main()` in `main/main.c`.
 
-### SPI speed
+### SPI speed and pins
 
-Change `EPD_SPI_HZ` in `main/main.c`.
+Change driver config in `main/main.c`:
+
+```c
+epaper_driver_config_t cfg = epaper_driver_default_config();
+cfg.spi_hz = 4000000; // lower if needed
+// cfg.pin_mosi, cfg.pin_clk, cfg.pin_cs, cfg.pin_dc, cfg.pin_rst, cfg.pin_busy
+ESP_ERROR_CHECK(epaper_driver_init(&epaper, &cfg));
+```
+
+## Reuse in other projects
+
+Copy these files into your ESP-IDF component:
+
+- `main/epaper_driver.h`
+- `main/epaper_driver.c`
+
+Then include and use:
+
+```c
+#include "epaper_driver.h"
+
+epaper_driver_t epaper;
+epaper_driver_config_t cfg = epaper_driver_default_config();
+ESP_ERROR_CHECK(epaper_driver_init(&epaper, &cfg));
+
+epaper_driver_clear(&epaper, true);
+epaper_driver_draw_text_scaled(&epaper, 8, 10, "Hello", 3);
+ESP_ERROR_CHECK(epaper_driver_update_full(&epaper));
+```
+
+And make sure the source is listed in your `idf_component_register(...)`.
 
 ## Troubleshooting
 
 ### Only half of the screen updates / dot pattern
 
-The code uses the panel's internal RAM format (`122x250`) and rotates coordinates in software. If the issue comes back, verify that these dimensions were not changed in `main/main.c`.
+The driver uses the panel's internal RAM format (`122x250`) and rotates coordinates in software. If the issue comes back, verify that these dimensions were not changed in `main/epaper_driver.c`.
 
 ### No update at all
 
@@ -71,11 +102,12 @@ The code uses the panel's internal RAM format (`122x250`) and rotates coordinate
 
 ### Image is upside down / wrong rotation
 
-Rotation is handled in `epd_draw_pixel()` in `main/main.c`. You can adjust the mapping there for other panel revisions.
+Rotation is handled in `epaper_driver_draw_pixel()` in `main/epaper_driver.c`. You can adjust the mapping there for other panel revisions.
 
 ## Files
 
-- `main/main.c` - driver + demo
+- `main/epaper_driver.h` - reusable public driver API
+- `main/epaper_driver.c` - reusable driver implementation
+- `main/main.c` - demo app using the driver
 - `docs/epaper_wiring.svg` - wiring diagram
 - `.gitignore` - ESP-IDF/IDE ignore
-
