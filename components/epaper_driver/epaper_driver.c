@@ -14,6 +14,7 @@
 
 static const char *TAG = "EPD_DRIVER";
 static uint8_t epd_fb[EPD_BUF_SIZE];
+static uint8_t epd_fb_prev[EPD_BUF_SIZE];
 
 // Simple 5x7 font for ASCII 0x20..0x7F
 static const uint8_t font5x7[][5] = {
@@ -117,7 +118,7 @@ static esp_err_t epd_set_window_full(epaper_driver_t *driver)
     return ESP_OK;
 }
 
-static esp_err_t epd_write_window_from_fb(epaper_driver_t *driver, uint8_t ram_cmd, uint8_t x_start_byte, uint8_t x_end_byte, uint16_t y_start, uint16_t y_end)
+static esp_err_t epd_write_window_from_buffer(epaper_driver_t *driver, uint8_t ram_cmd, uint8_t x_start_byte, uint8_t x_end_byte, uint16_t y_start, uint16_t y_end, const uint8_t *fb)
 {
     size_t bytes_per_row = (size_t)(x_end_byte - x_start_byte + 1);
 
@@ -126,10 +127,19 @@ static esp_err_t epd_write_window_from_fb(epaper_driver_t *driver, uint8_t ram_c
     ESP_ERROR_CHECK(epd_cmd(driver, ram_cmd));
 
     for (uint16_t y = y_start; y <= y_end; y++) {
-        const uint8_t *row = &epd_fb[(y * EPD_RAW_WIDTH_BYTES) + x_start_byte];
+        const uint8_t *row = &fb[(y * EPD_RAW_WIDTH_BYTES) + x_start_byte];
         ESP_ERROR_CHECK(epd_data(driver, row, bytes_per_row));
     }
     return ESP_OK;
+}
+
+static void epd_copy_window_between_buffers(uint8_t *dst, const uint8_t *src, uint8_t x_start_byte, uint8_t x_end_byte, uint16_t y_start, uint16_t y_end)
+{
+    size_t bytes_per_row = (size_t)(x_end_byte - x_start_byte + 1);
+    for (uint16_t y = y_start; y <= y_end; y++) {
+        size_t off = (y * EPD_RAW_WIDTH_BYTES) + x_start_byte;
+        memcpy(&dst[off], &src[off], bytes_per_row);
+    }
 }
 
 static bool epd_rect_to_raw_window(epaper_rect_t rect, uint8_t *x_start_byte, uint8_t *x_end_byte, uint16_t *y_start, uint16_t *y_end)
@@ -183,6 +193,37 @@ static void epd_draw_char_scaled(epaper_driver_t *driver, int x, int y, char c, 
                 for (int dx = 0; dx < scale; dx++) {
                     for (int dy = 0; dy < scale; dy++) {
                         epaper_driver_draw_pixel(driver, x + col * scale + dx, y + row * scale + dy, true);
+                    }
+                }
+            }
+        }
+    }
+}
+
+static bool epd_point_in_rect(int x, int y, const epaper_rect_t *rect)
+{
+    return (x >= rect->x) && (x < (rect->x + rect->width)) && (y >= rect->y) && (y < (rect->y + rect->height));
+}
+
+static void epd_draw_char_scaled_clipped(epaper_driver_t *driver, int x, int y, char c, int scale, const epaper_rect_t *clip)
+{
+    if (c < 32 || c > 127) {
+        c = '?';
+    }
+    const uint8_t *glyph = font5x7[(int)c - 32];
+
+    for (int col = 0; col < 5; col++) {
+        uint8_t line = glyph[col];
+        for (int row = 0; row < 7; row++) {
+            uint8_t px_on = (line >> row) & 0x01;
+            if (px_on) {
+                for (int dx = 0; dx < scale; dx++) {
+                    for (int dy = 0; dy < scale; dy++) {
+                        int px = x + col * scale + dx;
+                        int py = y + row * scale + dy;
+                        if (epd_point_in_rect(px, py, clip)) {
+                            epaper_driver_draw_pixel(driver, px, py, true);
+                        }
                     }
                 }
             }
@@ -272,6 +313,9 @@ esp_err_t epaper_driver_init(epaper_driver_t *driver, const epaper_driver_config
     ESP_ERROR_CHECK(epd_cmd(driver, 0x18));
     ESP_ERROR_CHECK(epd_data(driver, tmp, 1));
 
+    memset(epd_fb, 0xFF, sizeof(epd_fb));
+    memset(epd_fb_prev, 0xFF, sizeof(epd_fb_prev));
+
     return ESP_OK;
 }
 
@@ -301,6 +345,21 @@ void epaper_driver_draw_pixel(epaper_driver_t *driver, int x, int y, bool black)
     }
 }
 
+void epaper_driver_fill_rect(epaper_driver_t *driver, int x, int y, int width, int height, bool black)
+{
+    if (width <= 0 || height <= 0) {
+        return;
+    }
+
+    int x_end = x + width;
+    int y_end = y + height;
+    for (int yy = y; yy < y_end; yy++) {
+        for (int xx = x; xx < x_end; xx++) {
+            epaper_driver_draw_pixel(driver, xx, yy, black);
+        }
+    }
+}
+
 void epaper_driver_draw_text_scaled(epaper_driver_t *driver, int x, int y, const char *text, int scale)
 {
     int char_w = 6 * scale;
@@ -319,16 +378,65 @@ void epaper_driver_draw_text_scaled(epaper_driver_t *driver, int x, int y, const
     }
 }
 
+void epaper_driver_draw_text_in_rect(epaper_driver_t *driver, int x, int y, int width, int height, const char *text, int scale, bool clear_white)
+{
+    if (text == NULL || scale <= 0 || width <= 0 || height <= 0) {
+        return;
+    }
+
+    epaper_rect_t rect = {
+        .x = x,
+        .y = y,
+        .width = width,
+        .height = height,
+    };
+
+    if (clear_white) {
+        epaper_driver_fill_rect(driver, x, y, width, height, false);
+    }
+
+    int char_w = 6 * scale;
+    int line_h = 10 * scale;
+    int cur_x = x;
+    int cur_y = y;
+    int y_limit = y + height;
+    int x_limit = x + width;
+
+    while (*text) {
+        char c = *text++;
+        if (c == '\n') {
+            cur_x = x;
+            cur_y += line_h;
+            if ((cur_y + (8 * scale)) > y_limit) {
+                break;
+            }
+            continue;
+        }
+
+        if ((cur_x + char_w) > x_limit) {
+            cur_x = x;
+            cur_y += line_h;
+        }
+        if ((cur_y + (8 * scale)) > y_limit) {
+            break;
+        }
+
+        epd_draw_char_scaled_clipped(driver, cur_x, cur_y, c, scale, &rect);
+        cur_x += char_w;
+    }
+}
+
 esp_err_t epaper_driver_update_full(epaper_driver_t *driver)
 {
-    ESP_ERROR_CHECK(epd_write_window_from_fb(driver, 0x24, 0x00, EPD_RAW_WIDTH_BYTES - 1, 0, EPD_RAW_HEIGHT - 1));
-    ESP_ERROR_CHECK(epd_write_window_from_fb(driver, 0x26, 0x00, EPD_RAW_WIDTH_BYTES - 1, 0, EPD_RAW_HEIGHT - 1));
+    ESP_ERROR_CHECK(epd_write_window_from_buffer(driver, 0x24, 0x00, EPD_RAW_WIDTH_BYTES - 1, 0, EPD_RAW_HEIGHT - 1, epd_fb));
+    ESP_ERROR_CHECK(epd_write_window_from_buffer(driver, 0x26, 0x00, EPD_RAW_WIDTH_BYTES - 1, 0, EPD_RAW_HEIGHT - 1, epd_fb_prev));
 
     uint8_t update = 0xF7;
     ESP_ERROR_CHECK(epd_cmd(driver, 0x22));
     ESP_ERROR_CHECK(epd_data(driver, &update, 1));
     ESP_ERROR_CHECK(epd_cmd(driver, 0x20));
     epd_wait_busy(driver);
+    memcpy(epd_fb_prev, epd_fb, sizeof(epd_fb));
     return ESP_OK;
 }
 
@@ -361,8 +469,8 @@ esp_err_t epaper_partial_refresh_update(epaper_partial_refresh_t *partial)
         return ESP_OK;
     }
 
-    ESP_ERROR_CHECK(epd_write_window_from_fb(partial->driver, 0x24, x_start_byte, x_end_byte, y_start, y_end));
-    ESP_ERROR_CHECK(epd_write_window_from_fb(partial->driver, 0x26, x_start_byte, x_end_byte, y_start, y_end));
+    ESP_ERROR_CHECK(epd_write_window_from_buffer(partial->driver, 0x24, x_start_byte, x_end_byte, y_start, y_end, epd_fb));
+    ESP_ERROR_CHECK(epd_write_window_from_buffer(partial->driver, 0x26, x_start_byte, x_end_byte, y_start, y_end, epd_fb_prev));
 
     // 0xFF is commonly used partial update control value for this controller family.
     uint8_t update = 0xFF;
@@ -370,5 +478,6 @@ esp_err_t epaper_partial_refresh_update(epaper_partial_refresh_t *partial)
     ESP_ERROR_CHECK(epd_data(partial->driver, &update, 1));
     ESP_ERROR_CHECK(epd_cmd(partial->driver, 0x20));
     epd_wait_busy(partial->driver);
+    epd_copy_window_between_buffers(epd_fb_prev, epd_fb, x_start_byte, x_end_byte, y_start, y_end);
     return ESP_OK;
 }

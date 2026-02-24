@@ -2,10 +2,8 @@
 
 Test project for **WeAct 2.13" black/white e-paper** with **ESP32-S3** using ESP-IDF.
 
-/* All done with Codex/VSCode */
-
 The project includes:
-- A reusable e-paper driver module (`epaper_driver.c/.h`)
+- A reusable e-paper driver component (`components/epaper_driver`)
 - SPI initialization for the display
 - Simple framebuffer
 - Simple text rendering (5x7 font) with scaling
@@ -70,10 +68,9 @@ ESP_ERROR_CHECK(epaper_driver_init(&epaper, &cfg));
 
 ## Reuse in other projects
 
-Copy these files into your ESP-IDF component:
+Copy this component folder into another ESP-IDF project:
 
-- `main/epaper_driver.h`
-- `main/epaper_driver.c`
+- `components/epaper_driver/`
 
 Then include and use:
 
@@ -89,7 +86,13 @@ epaper_driver_draw_text_scaled(&epaper, 8, 10, "Hello", 3);
 ESP_ERROR_CHECK(epaper_driver_update_full(&epaper));
 ```
 
-And make sure the source is listed in your `idf_component_register(...)`.
+And make sure your app component has:
+
+```cmake
+idf_component_register(SRCS "main.c"
+                    INCLUDE_DIRS "."
+                    REQUIRES epaper_driver)
+```
 
 ### Partial refresh (region-based)
 
@@ -100,16 +103,25 @@ epaper_partial_refresh_t part;
 ESP_ERROR_CHECK(epaper_partial_refresh_init(&part, &epaper, 8, 10, 120, 40));
 
 // Draw into the same framebuffer as usual
-epaper_driver_draw_text_scaled(&epaper, 8, 10, "Updated", 2);
+epaper_driver_draw_text_in_rect(
+    &epaper,
+    part.area.x, part.area.y, part.area.width, part.area.height,
+    "Updated",
+    2,
+    true   // clear to white before drawing
+);
 
 // Refresh only the configured region
 ESP_ERROR_CHECK(epaper_partial_refresh_update(&part));
 ```
 
+Note: partial refresh now uses separate previous/current framebuffers internally. This avoids text corruption where partial updates could overwrite already visible content.
+
 Available types/functions:
 
 - `epaper_rect_t`
 - `epaper_partial_refresh_t`
+- `epaper_driver_draw_text_in_rect(...)`
 - `epaper_partial_refresh_init(...)`
 - `epaper_partial_refresh_update(...)`
 
@@ -117,7 +129,7 @@ Available types/functions:
 
 ### Only half of the screen updates / dot pattern
 
-The driver uses the panel's internal RAM format (`122x250`) and rotates coordinates in software. If the issue comes back, verify that these dimensions were not changed in `main/epaper_driver.c`.
+The driver uses the panel's internal RAM format (`122x250`) and rotates coordinates in software. If the issue comes back, verify that these dimensions were not changed in `components/epaper_driver/epaper_driver.c`.
 
 ### No update at all
 
@@ -127,18 +139,20 @@ The driver uses the panel's internal RAM format (`122x250`) and rotates coordina
 
 ### Image is upside down / wrong rotation
 
-Rotation is handled in `epaper_driver_draw_pixel()` in `main/epaper_driver.c`. You can adjust the mapping there for other panel revisions.
+Rotation is handled in `epaper_driver_draw_pixel()` in `components/epaper_driver/epaper_driver.c`. You can adjust the mapping there for other panel revisions.
 
 ### Partial refresh does not look correct
 
 - Start with a full refresh (`epaper_driver_update_full`) after init
+- Use `epaper_driver_draw_text_in_rect(..., clear_white=true)` for text replacement in a region
 - Ensure the partial region covers all changed pixels
-- If your panel revision behaves differently, tune update control in `epaper_partial_refresh_update()` in `main/epaper_driver.c`
+- If your panel revision behaves differently, tune update control in `epaper_partial_refresh_update()` in `components/epaper_driver/epaper_driver.c`
 
 ## Files
 
-- `main/epaper_driver.h` - reusable public driver API
-- `main/epaper_driver.c` - reusable driver implementation
+- `components/epaper_driver/include/epaper_driver.h` - reusable public driver API
+- `components/epaper_driver/epaper_driver.c` - reusable driver implementation
+- `components/epaper_driver/CMakeLists.txt` - component registration
 - `main/main.c` - demo app using the driver
 - `docs/epaper_wiring.svg` - wiring diagram
 - `.gitignore` - ESP-IDF/IDE ignore
