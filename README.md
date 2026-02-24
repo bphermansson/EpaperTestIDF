@@ -2,12 +2,15 @@
 
 Test project for **WeAct 2.13" black/white e-paper** with **ESP32-S3** using ESP-IDF.
 
+/* All done with Codex/VSCode */
+
 The project includes:
 - A reusable e-paper driver module (`epaper_driver.c/.h`)
 - SPI initialization for the display
 - Simple framebuffer
 - Simple text rendering (5x7 font) with scaling
 - Full refresh of the e-paper panel
+- Partial refresh API for region updates
 - Wiring diagram in `docs/epaper_wiring.svg`
 
 ## Hardware
@@ -88,6 +91,28 @@ ESP_ERROR_CHECK(epaper_driver_update_full(&epaper));
 
 And make sure the source is listed in your `idf_component_register(...)`.
 
+### Partial refresh (region-based)
+
+You can create a partial-refresh object for a region and update only that area:
+
+```c
+epaper_partial_refresh_t part;
+ESP_ERROR_CHECK(epaper_partial_refresh_init(&part, &epaper, 8, 10, 120, 40));
+
+// Draw into the same framebuffer as usual
+epaper_driver_draw_text_scaled(&epaper, 8, 10, "Updated", 2);
+
+// Refresh only the configured region
+ESP_ERROR_CHECK(epaper_partial_refresh_update(&part));
+```
+
+Available types/functions:
+
+- `epaper_rect_t`
+- `epaper_partial_refresh_t`
+- `epaper_partial_refresh_init(...)`
+- `epaper_partial_refresh_update(...)`
+
 ## Troubleshooting
 
 ### Only half of the screen updates / dot pattern
@@ -103,6 +128,12 @@ The driver uses the panel's internal RAM format (`122x250`) and rotates coordina
 ### Image is upside down / wrong rotation
 
 Rotation is handled in `epaper_driver_draw_pixel()` in `main/epaper_driver.c`. You can adjust the mapping there for other panel revisions.
+
+### Partial refresh does not look correct
+
+- Start with a full refresh (`epaper_driver_update_full`) after init
+- Ensure the partial region covers all changed pixels
+- If your panel revision behaves differently, tune update control in `epaper_partial_refresh_update()` in `main/epaper_driver.c`
 
 ## Files
 

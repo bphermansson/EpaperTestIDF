@@ -63,6 +63,33 @@ static inline esp_err_t epd_data(epaper_driver_t *driver, const uint8_t *data, s
     return epd_send(driver, 1, data, len);
 }
 
+static esp_err_t epd_set_window_raw(epaper_driver_t *driver, uint8_t x_start_byte, uint8_t x_end_byte, uint16_t y_start, uint16_t y_end)
+{
+    uint8_t x_range[2] = {x_start_byte, x_end_byte};
+    uint8_t y_range[4] = {
+        y_start & 0xFF,
+        (y_start >> 8) & 0xFF,
+        y_end & 0xFF,
+        (y_end >> 8) & 0xFF
+    };
+
+    ESP_ERROR_CHECK(epd_cmd(driver, 0x44));
+    ESP_ERROR_CHECK(epd_data(driver, x_range, sizeof(x_range)));
+    ESP_ERROR_CHECK(epd_cmd(driver, 0x45));
+    ESP_ERROR_CHECK(epd_data(driver, y_range, sizeof(y_range)));
+    return ESP_OK;
+}
+
+static esp_err_t epd_set_cursor_raw(epaper_driver_t *driver, uint8_t x_byte, uint16_t y)
+{
+    uint8_t y_bytes[2] = {y & 0xFF, (y >> 8) & 0xFF};
+    ESP_ERROR_CHECK(epd_cmd(driver, 0x4E));
+    ESP_ERROR_CHECK(epd_data(driver, &x_byte, 1));
+    ESP_ERROR_CHECK(epd_cmd(driver, 0x4F));
+    ESP_ERROR_CHECK(epd_data(driver, y_bytes, sizeof(y_bytes)));
+    return ESP_OK;
+}
+
 static void epd_wait_busy(epaper_driver_t *driver)
 {
     int timeout_ms = 7000;
@@ -85,22 +112,60 @@ static void epd_hw_reset(epaper_driver_t *driver)
 
 static esp_err_t epd_set_window_full(epaper_driver_t *driver)
 {
-    uint8_t x_range[2] = {0x00, EPD_RAW_WIDTH_BYTES - 1};
-    uint8_t y_range[4] = {0x00, 0x00, (EPD_RAW_HEIGHT - 1) & 0xFF, (EPD_RAW_HEIGHT - 1) >> 8};
-
-    ESP_ERROR_CHECK(epd_cmd(driver, 0x44));
-    ESP_ERROR_CHECK(epd_data(driver, x_range, sizeof(x_range)));
-
-    ESP_ERROR_CHECK(epd_cmd(driver, 0x45));
-    ESP_ERROR_CHECK(epd_data(driver, y_range, sizeof(y_range)));
-
-    uint8_t x = 0x00;
-    uint8_t y[2] = {0x00, 0x00};
-    ESP_ERROR_CHECK(epd_cmd(driver, 0x4E));
-    ESP_ERROR_CHECK(epd_data(driver, &x, 1));
-    ESP_ERROR_CHECK(epd_cmd(driver, 0x4F));
-    ESP_ERROR_CHECK(epd_data(driver, y, 2));
+    ESP_ERROR_CHECK(epd_set_window_raw(driver, 0x00, EPD_RAW_WIDTH_BYTES - 1, 0, EPD_RAW_HEIGHT - 1));
+    ESP_ERROR_CHECK(epd_set_cursor_raw(driver, 0x00, 0));
     return ESP_OK;
+}
+
+static esp_err_t epd_write_window_from_fb(epaper_driver_t *driver, uint8_t ram_cmd, uint8_t x_start_byte, uint8_t x_end_byte, uint16_t y_start, uint16_t y_end)
+{
+    size_t bytes_per_row = (size_t)(x_end_byte - x_start_byte + 1);
+
+    ESP_ERROR_CHECK(epd_set_window_raw(driver, x_start_byte, x_end_byte, y_start, y_end));
+    ESP_ERROR_CHECK(epd_set_cursor_raw(driver, x_start_byte, y_start));
+    ESP_ERROR_CHECK(epd_cmd(driver, ram_cmd));
+
+    for (uint16_t y = y_start; y <= y_end; y++) {
+        const uint8_t *row = &epd_fb[(y * EPD_RAW_WIDTH_BYTES) + x_start_byte];
+        ESP_ERROR_CHECK(epd_data(driver, row, bytes_per_row));
+    }
+    return ESP_OK;
+}
+
+static bool epd_rect_to_raw_window(epaper_rect_t rect, uint8_t *x_start_byte, uint8_t *x_end_byte, uint16_t *y_start, uint16_t *y_end)
+{
+    int x0 = rect.x;
+    int y0 = rect.y;
+    int x1 = rect.x + rect.width - 1;
+    int y1 = rect.y + rect.height - 1;
+
+    if (x1 < 0 || y1 < 0 || x0 >= EPAPER_SCREEN_WIDTH || y0 >= EPAPER_SCREEN_HEIGHT) {
+        return false;
+    }
+
+    if (x0 < 0) {
+        x0 = 0;
+    }
+    if (y0 < 0) {
+        y0 = 0;
+    }
+    if (x1 >= EPAPER_SCREEN_WIDTH) {
+        x1 = EPAPER_SCREEN_WIDTH - 1;
+    }
+    if (y1 >= EPAPER_SCREEN_HEIGHT) {
+        y1 = EPAPER_SCREEN_HEIGHT - 1;
+    }
+
+    int raw_x_min = (EPAPER_SCREEN_HEIGHT - 1) - y1;
+    int raw_x_max = (EPAPER_SCREEN_HEIGHT - 1) - y0;
+    int raw_y_min = x0;
+    int raw_y_max = x1;
+
+    *x_start_byte = (uint8_t)(raw_x_min / 8);
+    *x_end_byte = (uint8_t)(raw_x_max / 8);
+    *y_start = (uint16_t)raw_y_min;
+    *y_end = (uint16_t)raw_y_max;
+    return true;
 }
 
 static void epd_draw_char_scaled(epaper_driver_t *driver, int x, int y, char c, int scale)
@@ -256,19 +321,54 @@ void epaper_driver_draw_text_scaled(epaper_driver_t *driver, int x, int y, const
 
 esp_err_t epaper_driver_update_full(epaper_driver_t *driver)
 {
-    ESP_ERROR_CHECK(epd_set_window_full(driver));
-
-    ESP_ERROR_CHECK(epd_cmd(driver, 0x24));
-    ESP_ERROR_CHECK(epd_data(driver, epd_fb, sizeof(epd_fb)));
-
-    ESP_ERROR_CHECK(epd_set_window_full(driver));
-    ESP_ERROR_CHECK(epd_cmd(driver, 0x26));
-    ESP_ERROR_CHECK(epd_data(driver, epd_fb, sizeof(epd_fb)));
+    ESP_ERROR_CHECK(epd_write_window_from_fb(driver, 0x24, 0x00, EPD_RAW_WIDTH_BYTES - 1, 0, EPD_RAW_HEIGHT - 1));
+    ESP_ERROR_CHECK(epd_write_window_from_fb(driver, 0x26, 0x00, EPD_RAW_WIDTH_BYTES - 1, 0, EPD_RAW_HEIGHT - 1));
 
     uint8_t update = 0xF7;
     ESP_ERROR_CHECK(epd_cmd(driver, 0x22));
     ESP_ERROR_CHECK(epd_data(driver, &update, 1));
     ESP_ERROR_CHECK(epd_cmd(driver, 0x20));
     epd_wait_busy(driver);
+    return ESP_OK;
+}
+
+esp_err_t epaper_partial_refresh_init(epaper_partial_refresh_t *partial, epaper_driver_t *driver, int x, int y, int width, int height)
+{
+    if (partial == NULL || driver == NULL || width <= 0 || height <= 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    partial->driver = driver;
+    partial->area.x = x;
+    partial->area.y = y;
+    partial->area.width = width;
+    partial->area.height = height;
+    return ESP_OK;
+}
+
+esp_err_t epaper_partial_refresh_update(epaper_partial_refresh_t *partial)
+{
+    if (partial == NULL || partial->driver == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    uint8_t x_start_byte = 0;
+    uint8_t x_end_byte = 0;
+    uint16_t y_start = 0;
+    uint16_t y_end = 0;
+
+    if (!epd_rect_to_raw_window(partial->area, &x_start_byte, &x_end_byte, &y_start, &y_end)) {
+        return ESP_OK;
+    }
+
+    ESP_ERROR_CHECK(epd_write_window_from_fb(partial->driver, 0x24, x_start_byte, x_end_byte, y_start, y_end));
+    ESP_ERROR_CHECK(epd_write_window_from_fb(partial->driver, 0x26, x_start_byte, x_end_byte, y_start, y_end));
+
+    // 0xFF is commonly used partial update control value for this controller family.
+    uint8_t update = 0xFF;
+    ESP_ERROR_CHECK(epd_cmd(partial->driver, 0x22));
+    ESP_ERROR_CHECK(epd_data(partial->driver, &update, 1));
+    ESP_ERROR_CHECK(epd_cmd(partial->driver, 0x20));
+    epd_wait_busy(partial->driver);
     return ESP_OK;
 }
